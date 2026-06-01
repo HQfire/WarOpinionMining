@@ -1,0 +1,10 @@
+requests
+beautifulsoup4
+pandas
+numpy
+matplotlib
+seaborn
+pyecharts
+snownlp
+scikit-learn
+python-dotenv
