@@ -6,3 +6,4 @@ data/processed/
 output/
 *.log
 .venv/
+.idea/
