@@ -9,8 +9,9 @@ textblob
 requests
 beautifulsoup4
 selenium
+webdriver-manager
 fake-useragent
 langdetect
 scikit-learn
-google-api-python-client
+yt-dlp
 python-dotenv
