@@ -374,32 +374,87 @@ def render_conclusions_block(conclusions):
     items_html = ""
     for i, c in enumerate(conclusions, 1):
         items_html += f"""
-            <div style="display:flex;align-items:flex-start;margin-bottom:14px;
-                        padding:12px 16px;background:#f8f9fa;border-radius:8px;
-                        border-left:4px solid #5470c6;">
-                <span style="flex-shrink:0;display:inline-flex;align-items:center;
-                             justify-content:center;width:28px;height:28px;
-                             background:#5470c6;color:#fff;border-radius:50%;
-                             font-size:14px;font-weight:bold;margin-right:14px;
-                             margin-top:2px;">{i}</span>
-                <span style="font-size:15px;line-height:1.8;color:#333;">{c}</span>
+            <div class="conclusion-item">
+                <span class="conclusion-number">{i}</span>
+                <span class="conclusion-text">{c}</span>
             </div>"""
 
     html = f"""
-    <div style="max-width:1100px;margin:20px auto 40px auto;padding:0 20px;">
-        <div style="background:#ffffff;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.08);
-                    padding:30px 36px;">
-            <h2 style="font-size:22px;font-weight:bold;color:#333;margin:0 0 8px 0;
-                       text-align:center;">
-                📊 美以伊战争舆论分析结论
-            </h2>
-            <p style="text-align:center;color:#888;font-size:13px;margin:0 0 24px 0;">
-                基于数据分析自动生成的关键结论
-            </p>
+    <div class="section conclusions-section">
+        <div class="section-header">
+            <div class="section-icon">&#128202;</div>
+            <div>
+                <h2 class="section-title">舆论分析结论</h2>
+                <p class="section-subtitle">基于数据分析自动生成的关键洞察</p>
+            </div>
+        </div>
+        <div class="conclusions-list">
             {items_html}
         </div>
     </div>"""
     return html
+
+
+def build_stat_cards(df):
+    """基于数据生成关键指标统计卡片。"""
+    total = len(df)
+
+    platform_col = "platform" if "platform" in df.columns else None
+    platform_count = df[platform_col].nunique() if platform_col else 0
+    platform_names = df[platform_col].unique().tolist() if platform_col else []
+
+    sentiment_col = "sentiment_label" if "sentiment_label" in df.columns else ("sentiment" if "sentiment" in df.columns else None)
+    pos_count = 0
+    neg_count = 0
+    neu_count = 0
+    if sentiment_col:
+        counts = df[sentiment_col].value_counts().to_dict()
+        for label, count in counts.items():
+            lbl = str(label).lower()
+            if lbl in ["positive", "正面"]:
+                pos_count += count
+            elif lbl in ["negative", "负面"]:
+                neg_count += count
+            else:
+                neu_count += count
+    pos_pct = round(pos_count / total * 100, 1) if total > 0 else 0
+    neg_pct = round(neg_count / total * 100, 1) if total > 0 else 0
+
+    avg_score = round(df["sentiment_score"].mean(), 3) if "sentiment_score" in df.columns else "—"
+
+    cards = f"""
+    <div class="stat-cards">
+        <div class="stat-card stat-card-total">
+            <div class="stat-icon">&#128196;</div>
+            <div class="stat-value">{total}</div>
+            <div class="stat-label">总评论数</div>
+        </div>
+        <div class="stat-card stat-card-platform">
+            <div class="stat-icon">&#127758;</div>
+            <div class="stat-value">{platform_count}</div>
+            <div class="stat-label">数据来源平台</div>
+            <div class="stat-detail">{', '.join(platform_names[:3])}</div>
+        </div>
+        <div class="stat-card stat-card-positive">
+            <div class="stat-icon">&#128077;</div>
+            <div class="stat-value">{pos_pct}%</div>
+            <div class="stat-label">正面评论占比</div>
+            <div class="stat-detail">{pos_count} 条</div>
+        </div>
+        <div class="stat-card stat-card-negative">
+            <div class="stat-icon">&#128078;</div>
+            <div class="stat-value">{neg_pct}%</div>
+            <div class="stat-label">负面评论占比</div>
+            <div class="stat-detail">{neg_count} 条</div>
+        </div>
+        <div class="stat-card stat-card-score">
+            <div class="stat-icon">&#127919;</div>
+            <div class="stat-value">{avg_score}</div>
+            <div class="stat-label">平均情感得分</div>
+            <div class="stat-detail">0 ~ 1 范围</div>
+        </div>
+    </div>"""
+    return cards
 
 
 # ============================================================
@@ -896,36 +951,405 @@ def main():
         with open(output_path, "r", encoding="utf-8") as f:
             html_content = f.read()
 
-        if conclusions:
-            conclusions_html = render_conclusions_block(conclusions)
-            html_content = html_content.replace(
-                "<body>",
-                "<body>\n" + conclusions_html
-            )
-            print(f"{LOG_PREFIX} 分析结论已注入仪表盘 HTML")
+        # 提取 pyecharts 生成的图表 div + script 块
+        chart_blocks = []
+        # 匹配从 <div id="... class="chart-container" 到 </script> 的完整图表块
+        import re
+        pattern = re.compile(
+            r'<div id="[^"]+" class="chart-container"[^>]*>.*?</div>\s*<script>.*?</script>',
+            re.DOTALL
+        )
+        for m in pattern.finditer(html_content):
+            chart_blocks.append(m.group())
 
+        # 构建统计卡片
+        stat_cards_html = build_stat_cards(sentiment_df)
+
+        # 构建结论块
+        conclusions_html = render_conclusions_block(conclusions) if conclusions else ""
+
+        # 处理词云路径 —— 使用正斜杠，避免 Windows 反斜杠问题
+        wordcloud_html = ""
         if wc_path is not None and os.path.exists(wc_path):
-            rel_path = os.path.relpath(wc_path, OUTPUT_DIR)
+            wc_rel = os.path.relpath(wc_path, OUTPUT_DIR).replace("\\", "/")
             wordcloud_html = f"""
-    <div style="max-width:1200px;margin:20px auto;padding:0 20px 40px 20px;">
-        <div style="background:#ffffff;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.08);padding:30px;">
-            <h2 style="font-size:22px;font-weight:bold;color:#333;margin:0 0 20px 0;text-align:center;">
-                ☁️ 美以伊战争评论词云图
-            </h2>
-            <p style="text-align:center;color:#888;font-size:13px;margin:0 0 24px 0;">
-                基于jieba分词与TF-IDF权重生成，剔除战争相关高频词后突出显示讨论焦点
-            </p>
-            <div style="text-align:center;">
-                <img src="{rel_path}" alt="词云图" style="max-width:100%;height:auto;border-radius:8px;">
+    <div class="section wordcloud-section">
+        <div class="section-header">
+            <div class="section-icon">&#9729;</div>
+            <div>
+                <h2 class="section-title">评论词云图</h2>
+                <p class="section-subtitle">基于 jieba 分词生成，突出显示讨论焦点</p>
             </div>
         </div>
+        <div class="wordcloud-content">
+            <img src="{wc_rel}" alt="词云图" class="wordcloud-img" />
+        </div>
     </div>"""
-            html_content = html_content.replace("</body>", wordcloud_html + "\n</body>")
-            print(f"{LOG_PREFIX} 词云图已嵌入仪表盘 HTML")
+
+        # 将所有图表放入卡片容器
+        charts_html = ""
+        chart_titles = [
+            ("情感分布饼图", "正面 / 负面 / 中性 评论占比"),
+            ("平台情感倾向对比", "不同社交媒体平台的情感分布对比"),
+            ("舆情情感时间趋势", "每日平均情感得分变化趋势"),
+            ("主题分类分布", "各主题相关的评论数量统计"),
+        ]
+        for i, block in enumerate(chart_blocks):
+            title = chart_titles[i][0] if i < len(chart_titles) else f"图表 {i+1}"
+            subtitle = chart_titles[i][1] if i < len(chart_titles) else ""
+            charts_html += f"""
+    <div class="chart-card">
+        <div class="chart-card-header">
+            <div class="chart-card-icon">{i + 1}</div>
+            <div>
+                <h3 class="chart-card-title">{title}</h3>
+                <p class="chart-card-subtitle">{subtitle}</p>
+            </div>
+        </div>
+        <div class="chart-card-body">
+            {block}
+        </div>
+    </div>"""
+
+        # 构建完整页面结构
+        full_html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>战争舆论挖掘 - 可视化仪表盘</title>
+    <script type="text/javascript" src="https://assets.pyecharts.org/assets/v6/echarts.min.js"></script>
+    <script type="text/javascript" src="https://assets.pyecharts.org/assets/v6/themes/romantic.js"></script>
+    <style>
+        /* ===== 全局重置 ===== */
+        *, *::before, *::after {{
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans SC", sans-serif;
+            background: #f0f2f5;
+            color: #333;
+            line-height: 1.6;
+            min-height: 100vh;
+        }}
+
+        /* ===== 页面容器 ===== */
+        .page-wrapper {{
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px 20px 60px;
+        }}
+
+        /* ===== 顶部横幅 ===== */
+        .hero {{
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+            background-size: 200% 200%;
+            animation: gradientShift 12s ease infinite;
+            border-radius: 16px;
+            padding: 48px 40px;
+            margin-bottom: 32px;
+            text-align: center;
+            color: #fff;
+            position: relative;
+            overflow: hidden;
+        }}
+        .hero::before {{
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 70%);
+            pointer-events: none;
+        }}
+        @keyframes gradientShift {{
+            0% {{ background-position: 0% 50%; }}
+            50% {{ background-position: 100% 50%; }}
+            100% {{ background-position: 0% 50%; }}
+        }}
+        .hero-title {{
+            font-size: 32px;
+            font-weight: 800;
+            margin-bottom: 8px;
+            letter-spacing: 2px;
+            position: relative;
+        }}
+        .hero-subtitle {{
+            font-size: 16px;
+            opacity: 0.85;
+            font-weight: 300;
+            position: relative;
+        }}
+        .hero-badge {{
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(4px);
+            border-radius: 20px;
+            padding: 4px 16px;
+            font-size: 13px;
+            margin-top: 12px;
+            position: relative;
+        }}
+
+        /* ===== 统计卡片 ===== */
+        .stat-cards {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }}
+        .stat-card {{
+            background: #fff;
+            border-radius: 12px;
+            padding: 24px 20px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: default;
+            position: relative;
+            overflow: hidden;
+        }}
+        .stat-card:hover {{
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.10);
+        }}
+        .stat-card::after {{
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+        }}
+        .stat-card-total::after {{ background: #5470c6; }}
+        .stat-card-platform::after {{ background: #91cc75; }}
+        .stat-card-positive::after {{ background: #ee6666; }}
+        .stat-card-negative::after {{ background: #fac858; }}
+        .stat-card-score::after {{ background: #73c0de; }}
+
+        .stat-icon {{ font-size: 28px; margin-bottom: 8px; }}
+        .stat-value {{
+            font-size: 32px;
+            font-weight: 800;
+            color: #1a1a2e;
+            margin-bottom: 4px;
+        }}
+        .stat-label {{
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+        }}
+        .stat-detail {{
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }}
+
+        /* ===== 通用区域 ===== */
+        .section {{
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            padding: 32px;
+            margin-bottom: 24px;
+        }}
+        .section-header {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #f0f2f5;
+        }}
+        .section-icon {{
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: #fff;
+            flex-shrink: 0;
+        }}
+        .section-title {{
+            font-size: 20px;
+            font-weight: 700;
+            color: #1a1a2e;
+        }}
+        .section-subtitle {{
+            font-size: 13px;
+            color: #999;
+            margin-top: 2px;
+        }}
+
+        /* ===== 结论列表 ===== */
+        .conclusions-list {{
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }}
+        .conclusion-item {{
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            padding: 16px 20px;
+            background: #f8f9fc;
+            border-radius: 12px;
+            border-left: 4px solid #5470c6;
+            transition: background 0.2s;
+        }}
+        .conclusion-item:hover {{
+            background: #eef1f7;
+        }}
+        .conclusion-number {{
+            flex-shrink: 0;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #5470c6, #7c9bf0);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 700;
+            margin-top: 2px;
+        }}
+        .conclusion-text {{
+            font-size: 15px;
+            line-height: 1.8;
+            color: #333;
+        }}
+
+        /* ===== 图表卡片 ===== */
+        .chart-card {{
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            margin-bottom: 28px;
+            overflow: hidden;
+        }}
+        .chart-card-header {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 20px 28px 0;
+        }}
+        .chart-card-icon {{
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }}
+        .chart-card-title {{
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a1a2e;
+        }}
+        .chart-card-subtitle {{
+            font-size: 13px;
+            color: #999;
+            margin-top: 2px;
+        }}
+        .chart-card-body {{
+            padding: 8px 12px 12px;
+            display: flex;
+            justify-content: center;
+        }}
+        .chart-card-body .chart-container {{
+            margin: 0 auto;
+        }}
+        /* pyecharts 的 .box 内联样式覆盖 */
+        .box {{
+            justify-content: center;
+            display: flex;
+            flex-wrap: wrap;
+        }}
+
+        /* ===== 词云 ===== */
+        .wordcloud-content {{
+            text-align: center;
+            padding: 12px 0;
+        }}
+        .wordcloud-img {{
+            max-width: 100%;
+            height: auto;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }}
+
+        /* ===== 页脚 ===== */
+        .footer {{
+            text-align: center;
+            padding: 24px 0 8px;
+            color: #bbb;
+            font-size: 13px;
+        }}
+        .footer a {{
+            color: #667eea;
+            text-decoration: none;
+        }}
+
+        /* ===== 响应式 ===== */
+        @media (max-width: 768px) {{
+            .hero {{ padding: 32px 20px; }}
+            .hero-title {{ font-size: 24px; }}
+            .stat-cards {{ grid-template-columns: repeat(2, 1fr); }}
+            .section {{ padding: 20px; }}
+            .chart-card-header {{ padding: 16px 16px 0; }}
+        }}
+        @media (max-width: 480px) {{
+            .stat-cards {{ grid-template-columns: 1fr; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="page-wrapper">
+        <!-- 顶部横幅 -->
+        <div class="hero">
+            <h1 class="hero-title">美以伊战争舆论挖掘分析</h1>
+            <p class="hero-subtitle">多平台社交网络数据 · 深度数据清洗 · 情感修正分析 · 主题分类与可视化</p>
+            <span class="hero-badge">&#9201; 交互式数据仪表盘</span>
+        </div>
+
+        <!-- 统计卡片 -->
+        {stat_cards_html}
+
+        <!-- 结论区块 -->
+        {conclusions_html}
+
+        <!-- 图表区块 -->
+        {charts_html}
+
+        <!-- 词云区块 -->
+        {wordcloud_html}
+
+        <!-- 页脚 -->
+        <div class="footer">
+            战争舆论挖掘分析系统 &middot; 基于 SnowNLP + TextRank + pyecharts 构建
+        </div>
+    </div>
+</body>
+</html>"""
 
         with open(output_path, "w", encoding="utf-8") as f:
-            f.write(html_content)
+            f.write(full_html)
 
+        print(f"\n{LOG_PREFIX} {'*' * 50}")
+        print(f"{LOG_PREFIX} 仪表盘已成功保存!")
+        print(f"{LOG_PREFIX} 输出路径: {os.path.abspath(output_path)}")
         print(f"{LOG_PREFIX} 请用浏览器打开该文件查看交互式仪表盘")
         print(f"{LOG_PREFIX} {'*' * 50}\n")
     except Exception as e:
