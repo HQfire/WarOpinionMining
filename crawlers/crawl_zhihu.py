@@ -1,372 +1,367 @@
-"""
-知乎爬虫模块 — 美以伊战争舆情挖掘项目
-==================================
-功能：
-    通过 Selenium 模拟 Edge 浏览器访问知乎搜索页面，
-    爬取“美以伊战争”相关内容，并保存为单独 CSV 文件。
-
-输出：
-    data/raw/知乎_posts.csv
-
-运行：
-    python crawlers/crawl_zhihu.py
-"""
-
-import os
+import csv
 import time
 import random
-import pandas as pd
-from urllib.parse import quote
+import requests
+from datetime import datetime
+from urllib.parse import urlencode, urlparse, parse_qs
 
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.edge.options import Options
-from selenium.webdriver.edge.service import Service
-from webdriver_manager.microsoft import EdgeChromiumDriverManager
+# ==================== 配置区域 ====================
 
+# 搜索关键词列表，围绕 "美以伊战争"
+SEARCH_KEYWORDS = [
+    "美以伊战争",
+    "伊朗反击美以",
+    "美以打伊朗",
+    "美以伊战争 中国网友",
+    "美以伊 战争 看法"
+]
 
-# 项目根目录
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# 每个关键词搜索的问题数量（搜索API每页约20条）
+QUESTIONS_PER_KEYWORD = 3
 
-# 输出目录
-OUTPUT_DIR = os.path.join(BASE_DIR, "data", "raw")
+# 每个问题获取的回答数量（每页20条）
+ANSWERS_PER_QUESTION = 2
 
+# 每个回答获取的评论页数（每页约20条）
+COMMENT_PAGES_PER_ANSWER = 3
 
-def create_driver():
-    """创建 Edge 浏览器。"""
-    options = Options()
+# 输出文件名
+OUTPUT_CSV = "zhihu_comments.csv"
 
-    # 建议先不要开启无头模式，方便手动登录、查看页面情况
-    # options.add_argument("--headless=new")
+# 请求延迟（秒）
+REQUEST_DELAY_MIN = 1.5
+REQUEST_DELAY_MAX = 3.5
 
-    options.add_argument("--window-size=1400,900")
-    options.add_argument("--disable-gpu")
+# ==================== 请求头配置 ====================
 
-    service = Service(EdgeChromiumDriverManager().install())
-    driver = webdriver.Edge(service=service, options=options)
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Referer": "https://www.zhihu.com/",
+    "Origin": "https://www.zhihu.com",
+    "Connection": "keep-alive",
+}
 
-    return driver
+# ==================== Cookie 配置（重要！） ====================
 
-
-def safe_find_text(parent, selectors):
-    """
-    按多个 CSS 选择器依次尝试提取文本。
-
-    Args:
-        parent: Selenium 元素
-        selectors: CSS 选择器列表
-
-    Returns:
-        str: 提取到的文本
-    """
-    for selector in selectors:
-        try:
-            elem = parent.find_element(By.CSS_SELECTOR, selector)
-            text = elem.text.strip()
-            if text:
-                return text
-        except Exception:
-            pass
-
-    return ""
+# TODO: 请替换为你的知乎 Cookie
+# 获取方式：登录 zhihu.com → F12 → 应用程序(Application) → Cookies → 复制 "z_c0" 的值
+COOKIES = {
+    "z_c0": "Mi4xcDlUNVVRQUFBQUJlaGxUUExWbndHeVlBQUFCZ0FsVk5CcTRlYXdBeEFpdHM3R2lqRENxb0JIamx6M01idl9QNUd3|182ce03affe82ab22c07ecb09ec38a20d051d9c943d0c3c318e5509b3e503070"  # 必填！否则无法获取完整数据
+}
 
 
-def safe_find_attr(parent, selectors, attr):
-    """
-    按多个 CSS 选择器依次尝试提取属性。
+# ==================== 工具函数 ====================
 
-    Args:
-        parent: Selenium 元素
-        selectors: CSS 选择器列表
-        attr: 属性名，例如 href
-
-    Returns:
-        str: 属性值
-    """
-    for selector in selectors:
-        try:
-            elem = parent.find_element(By.CSS_SELECTOR, selector)
-            value = elem.get_attribute(attr)
-            if value:
-                return value.strip()
-        except Exception:
-            pass
-
-    return ""
-
-
-def clean_text(text):
-    """清洗文本。"""
-    if not text:
+def trans_date(timestamp):
+    """将时间戳转换为日期字符串"""
+    if not timestamp:
         return ""
-
-    text = text.replace("\n", " ")
-    text = text.replace("\r", " ")
-    text = text.replace("阅读全文", " ")
-    text = text.replace("显示全部", " ")
-
-    while "  " in text:
-        text = text.replace("  ", " ")
-
-    return text.strip()
-
-
-def parse_like_count(text):
-    """
-    解析知乎赞同数。
-
-    示例：
-        12 -> 12
-        1.2 万 -> 12000
-        赞同 36 -> 36
-    """
-    if not text:
-        return 0
-
-    text = text.replace("赞同", "")
-    text = text.replace("赞", "")
-    text = text.replace(",", "")
-    text = text.strip()
-
     try:
-        if "万" in text:
-            return int(float(text.replace("万", "").strip()) * 10000)
-
-        return int(text)
-
-    except Exception:
-        return 0
-
-
-def get_post_id_from_url(url):
-    """从知乎 URL 中简单提取 ID。"""
-    if not url:
+        if isinstance(timestamp, int):
+            time_array = time.localtime(timestamp)
+            return time.strftime("%Y-%m-%d %H:%M:%S", time_array)
+        return str(timestamp)
+    except:
         return ""
 
-    url = url.split("?")[0]
-    parts = [p for p in url.rstrip("/").split("/") if p]
 
-    if not parts:
-        return ""
-
-    return parts[-1]
-
-
-def extract_posts(driver, keyword):
-    """
-    从当前知乎搜索页提取内容。
-
-    重要修复：
-        不再使用 ".SearchResult-Card, .ContentItem" 同时选择，
-        因为知乎页面中 .ContentItem 经常嵌套在 .SearchResult-Card 中，
-        同时抓会导致数据两两重复。
-    """
-    data = []
-    seen = set()
-
-    # 只抓外层搜索卡片，避免外层和内层重复
-    cards = driver.find_elements(By.CSS_SELECTOR, ".SearchResult-Card")
-
-    # 如果页面结构变化，没有外层卡片，再抓 ContentItem 作为备用
-    if not cards:
-        cards = driver.find_elements(By.CSS_SELECTOR, ".ContentItem")
-
-    for card in cards:
-        title = safe_find_text(card, [
-            ".ContentItem-title",
-            ".QuestionItem-title",
-            "h2",
-            "h3",
-        ])
-
-        content = safe_find_text(card, [
-            ".RichContent-inner",
-            ".RichText",
-            ".SearchResult-snippet",
-            ".ContentItem-excerpt",
-        ])
-
-        title = clean_text(title)
-        content = clean_text(content)
-
-        if not title and not content:
-            continue
-
-        if title and content and content not in title:
-            full_content = title + " " + content
+def safe_get(data, *keys, default=""):
+    """安全地从嵌套字典中获取值"""
+    for key in keys:
+        if isinstance(data, dict):
+            data = data.get(key, {})
         else:
-            full_content = title or content
-
-        full_content = clean_text(full_content)
-
-        if len(full_content) < 5:
-            continue
-
-        user_name = safe_find_text(card, [
-            ".AuthorInfo-name",
-            ".UserLink-link",
-            ".Popover",
-        ])
-
-        publish_time = safe_find_text(card, [
-            ".ContentItem-time",
-            ".ContentItem-status",
-            ".SearchResult-meta",
-        ])
-
-        like_text = safe_find_text(card, [
-            ".VoteButton",
-            "button[aria-label*='赞同']",
-        ])
-
-        url = safe_find_attr(card, [
-            "a[href*='/question/']",
-            "a[href*='/answer/']",
-            "a[href*='/p/']",
-        ], "href")
-
-        post_id = get_post_id_from_url(url)
-
-        # 当前页内部去重
-        unique_key = url or full_content[:120]
-
-        if unique_key in seen:
-            continue
-
-        seen.add(unique_key)
-
-        data.append({
-            "platform": "知乎",
-            "keyword": keyword,
-            "content": full_content,
-            "publish_time": publish_time,
-            "user_name": user_name or "知乎用户",
-            "like_count": parse_like_count(like_text),
-            "post_id": post_id,
-            "url": url,
-        })
-
-    return data
+            return default
+    return data if data is not None else default
 
 
-def search_posts(keyword, count=800, max_pages=50):
+def request_with_retry(url, params=None, max_retries=3):
+    """带重试的请求函数"""
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(
+                url,
+                params=params,
+                headers=HEADERS,
+                cookies=COOKIES,
+                timeout=15
+            )
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 403:
+                print(f"  ⚠️ 403 禁止访问，可能是Cookie失效，请更新z_c0")
+                return None
+            else:
+                print(f"  ⚠️ 请求失败，状态码: {response.status_code}")
+                time.sleep(2 ** attempt)  # 指数退避
+        except requests.exceptions.RequestException as e:
+            print(f"  ⚠️ 请求异常 (尝试 {attempt + 1}/{max_retries}): {e}")
+            time.sleep(2 ** attempt)
+    return None
+
+
+# ==================== 核心爬虫函数 ====================
+
+def search_questions(keyword, limit=20):
     """
-    搜索知乎内容。
-
-    Args:
-        keyword: 搜索关键词
-        count: 目标数量
-        max_pages: 最大翻页数
-
-    Returns:
-        list[dict]: 爬取结果
+    搜索与关键词相关的问题
+    API: https://www.zhihu.com/api/v4/search_v3
     """
-    driver = create_driver()
+    questions = []
+    url = "https://www.zhihu.com/api/v4/search_v3"
+    params = {
+        "t": "general",
+        "q": keyword,
+        "correction": "1",
+        "offset": 0,
+        "limit": limit,
+        "lc_idx": 0,
+        "show_all_topics": "0",
+        "search_source": "Normal"
+    }
 
-    results = []
-    seen = set()
+    print(f"🔍 搜索关键词: {keyword}")
+    data = request_with_retry(url, params)
 
-    try:
-        driver.get("https://www.zhihu.com/")
-
-        print("[知乎] 如果页面要求登录，请先在浏览器里扫码登录")
-        input("[知乎] 登录完成后按回车继续；如果已经登录，也直接按回车：")
-
-        for page in range(1, max_pages + 1):
-            if len(results) >= count:
-                break
-
-            url = f"https://www.zhihu.com/search?type=content&q={quote(keyword)}&page={page}"
-
-            print(f"[知乎] 正在打开第 {page} 页：{url}")
-            driver.get(url)
-
-            time.sleep(random.uniform(4, 6))
-
-            # 滚动页面，让搜索结果加载完整
-            for _ in range(4):
-                driver.execute_script("window.scrollBy(0, 900);")
-                time.sleep(random.uniform(1, 2))
-
-            page_data = extract_posts(driver, keyword)
-
-            print(f"[知乎] 第 {page} 页提取到 {len(page_data)} 条")
-
-            # 跨页去重
-            for item in page_data:
-                unique_key = item.get("url") or item.get("content", "")[:120]
-
-                if unique_key in seen:
-                    continue
-
-                seen.add(unique_key)
-                results.append(item)
-
-                if len(results) >= count:
-                    break
-
-            time.sleep(random.uniform(2, 4))
-
-    finally:
-        driver.quit()
-
-    return results[:count]
-
-
-def save_to_csv(data, output_path):
-    """保存 CSV 文件。"""
     if not data:
-        print("[知乎] 没有抓到数据，不保存 CSV")
-        return
+        return questions
 
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    # 解析搜索结果
+    for item in data.get("data", []):
+        if item.get("type") == "search_result":
+            obj = item.get("object", {})
+            if obj.get("type") == "question":
+                question_id = obj.get("id")
+                title = obj.get("title", "")
+                if question_id:
+                    questions.append({
+                        "id": question_id,
+                        "title": title,
+                        "answer_count": obj.get("answer_count", 0)
+                    })
 
-    df = pd.DataFrame(data)
+    print(f"  找到 {len(questions)} 个相关问题")
+    return questions
 
-    columns = [
-        "platform",
-        "keyword",
-        "content",
-        "publish_time",
-        "user_name",
-        "like_count",
-        "post_id",
-        "url",
-    ]
 
-    for col in columns:
-        if col not in df.columns:
-            df[col] = ""
+def get_answers(question_id, limit=20):
+    """
+    获取某个问题的回答列表
+    API: https://www.zhihu.com/api/v4/questions/{qid}/answers
+    """
+    answers = []
+    url = f"https://www.zhihu.com/api/v4/questions/{question_id}/answers"
+    params = {
+        "limit": limit,
+        "offset": 0,
+        "order": "default"  # 按默认排序（综合）
+    }
 
-    df = df[columns]
+    data = request_with_retry(url, params)
+    if not data:
+        return answers
 
-    # 保存前再去重一遍，防止页面懒加载重复
-    df = df.drop_duplicates(subset=["content"], keep="first")
+    for item in data.get("data", []):
+        answer_id = item.get("id")
+        if answer_id:
+            answers.append({
+                "id": answer_id,
+                "question_id": question_id,
+                "author_name": safe_get(item, "author", "name"),
+                "content": safe_get(item, "content", "")[:100],  # 截取前100字作为上下文
+                "voteup_count": item.get("voteup_count", 0),
+                "comment_count": item.get("comment_count", 0)
+            })
 
-    df.to_csv(output_path, index=False, encoding="utf-8-sig")
+    return answers
 
-    print(f"[知乎] 已保存：{output_path}")
-    print(f"[知乎] 共 {len(df)} 条")
 
+def get_comments(answer_id, max_pages=3):
+    """
+    获取某个回答的评论（包含根评论和子评论）
+    API: https://www.zhihu.com/api/v4/answers/{aid}/root_comments
+    """
+    all_comments = []
+    offset = 0
+    limit = 20
+
+    for page in range(max_pages):
+        url = f"https://www.zhihu.com/api/v4/answers/{answer_id}/root_comments"
+        params = {
+            "order": "normal",
+            "limit": limit,
+            "offset": offset,
+            "status": "open"
+        }
+
+        data = request_with_retry(url, params)
+        if not data:
+            break
+
+        comments = data.get("data", [])
+        if not comments:
+            break
+
+        # 处理每条根评论
+        for comment in comments:
+            # 提取根评论信息
+            author = comment.get("author", {})
+            comment_info = {
+                "comment_text": comment.get("content", ""),
+                "created_at": trans_date(comment.get("created_time")),
+                "user_nickname": author.get("name", ""),
+                "like_count": comment.get("vote_count", 0),
+                "reply_to": "",  # 根评论没有回复对象
+                "is_child": False
+            }
+            all_comments.append(comment_info)
+
+            # 处理子评论（二级评论）
+            child_comments = comment.get("child_comments", [])
+            for child in child_comments:
+                child_author = child.get("author", {})
+                child_info = {
+                    "comment_text": child.get("content", ""),
+                    "created_at": trans_date(child.get("created_time")),
+                    "user_nickname": child_author.get("name", ""),
+                    "like_count": child.get("vote_count", 0),
+                    "reply_to": safe_get(child, "reply_to_author", "name") or "",
+                    "is_child": True
+                }
+                all_comments.append(child_info)
+
+        # 更新分页参数
+        paging = data.get("paging", {})
+        next_url = paging.get("next")
+        if not next_url:
+            break
+        parsed = urlparse(next_url)
+        offset = int(parse_qs(parsed.query).get("offset", [0])[0])
+
+        # 随机延迟
+        time.sleep(random.uniform(0.5, 1.5))
+
+    return all_comments
+
+
+# ==================== 主程序 ====================
 
 def main():
-    """知乎爬虫主入口。"""
-    keyword = "美以伊战争"
-    output_path = os.path.join(OUTPUT_DIR, "知乎_posts.csv")
-
     print("=" * 60)
-    print("[知乎] 简化版爬虫启动")
+    print("🚀 知乎评论爬虫启动 - 美以伊战争专题")
+    print(f"📅 开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 
-    data = search_posts(
-        keyword=keyword,
-        count=800,
-        max_pages=50,
-    )
+    # 检查Cookie是否配置
+    if COOKIES.get("z_c0") == "你的z_c0值":
+        print("\n⚠️ 警告: 未配置有效的 z_c0 Cookie！")
+        print("   请打开 zhihu.com，按 F12 → Application → Cookies → 复制 z_c0 的值")
+        print("   然后粘贴到代码中 COOKIES 字典的 'z_c0' 字段\n")
+        response = input("是否继续尝试？（可能无法获取数据）[y/N]: ")
+        if response.lower() != 'y':
+            print("已退出")
+            return
 
-    save_to_csv(data, output_path)
+    all_comments = []
+    processed_answers = set()  # 避免重复处理同一个回答
 
-    print("[知乎] 完成")
+    # 遍历关键词
+    for keyword in SEARCH_KEYWORDS:
+        print(f"\n{'=' * 50}")
+        print(f"📌 处理关键词: {keyword}")
+
+        # 1. 搜索问题
+        questions = search_questions(keyword, QUESTIONS_PER_KEYWORD * 20)
+        if not questions:
+            print(f"  ⚠️ 未找到相关问题，跳过")
+            continue
+
+        # 2. 遍历问题
+        for q_idx, question in enumerate(questions[:QUESTIONS_PER_KEYWORD]):
+            qid = question["id"]
+            qtitle = question["title"][:40] if question["title"] else f"问题{qid}"
+            print(f"\n  📝 问题 [{q_idx + 1}/{min(len(questions), QUESTIONS_PER_KEYWORD)}]: {qtitle}")
+
+            # 3. 获取回答
+            answers = get_answers(qid, ANSWERS_PER_QUESTION * 20)
+            if not answers:
+                print(f"    该问题暂无回答")
+                continue
+
+            # 4. 遍历回答
+            for a_idx, answer in enumerate(answers[:ANSWERS_PER_QUESTION]):
+                aid = answer["id"]
+
+                # 避免重复处理
+                if aid in processed_answers:
+                    continue
+                processed_answers.add(aid)
+
+                author = answer["author_name"]
+                print(
+                    f"    回答 [{a_idx + 1}/{min(len(answers), ANSWERS_PER_QUESTION)}] 作者: {author} (评论数: {answer['comment_count']})")
+
+                # 5. 获取评论
+                comments = get_comments(aid, COMMENT_PAGES_PER_ANSWER)
+
+                if comments:
+                    # 添加回答和问题的上下文信息
+                    for c in comments:
+                        c["answer_id"] = aid
+                        c["answer_author"] = author
+                        c["question_title"] = qtitle
+                        c["keyword"] = keyword
+
+                    all_comments.extend(comments)
+                    print(f"      获取 {len(comments)} 条评论 (累计: {len(all_comments)})")
+                else:
+                    print(f"      该回答暂无评论")
+
+                # 随机延迟，模拟人类浏览
+                time.sleep(random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX))
+
+                # 达到目标数量提前结束
+                if len(all_comments) >= 1000:
+                    print(f"\n🎯 已达到目标数量 {len(all_comments)} 条评论，停止爬取")
+                    break
+
+            if len(all_comments) >= 1000:
+                break
+
+        if len(all_comments) >= 1000:
+            break
+
+    # 6. 保存结果
+    print("\n" + "=" * 60)
+    print(f"📊 共收集 {len(all_comments)} 条评论")
+
+    if all_comments:
+        # 保存为CSV
+        fieldnames = [
+            "comment_text", "created_at", "user_nickname", "like_count",
+            "reply_to", "is_child", "answer_id", "answer_author",
+            "question_title", "keyword"
+        ]
+
+        with open(OUTPUT_CSV, 'w', newline='', encoding='utf-8-sig') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(all_comments)
+
+        print(f"✅ 数据已保存至: {OUTPUT_CSV}")
+
+        # 统计信息
+        root_count = sum(1 for c in all_comments if not c.get("is_child"))
+        child_count = len(all_comments) - root_count
+        print(f"   - 一级评论: {root_count} 条")
+        print(f"   - 二级评论: {child_count} 条")
+    else:
+        print("⚠️ 未收集到任何评论数据")
+
+    print(f"🏁 结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 
 

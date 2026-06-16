@@ -1,195 +1,186 @@
-import os
+import csv
 import time
 import random
-import pandas as pd
-from datetime import datetime, timedelta
-from urllib.parse import quote
+from datetime import datetime
+from crawl4weibo import WeiboClient
 
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.edge.options import Options
-from selenium.webdriver.edge.service import Service
-from webdriver_manager.microsoft import EdgeChromiumDriverManager
+# ==================== 配置区域 ====================
+# 搜索关键词列表，围绕 "美以伊战争"
+SEARCH_KEYWORDS = [
+    "美以伊战争",
+    "美以伊战争 中国网友",
+    "伊朗反击美以",
+    "美国伊朗以色列 战争",
+    "中东局势 中国看法"
+]
 
+# 每个关键词搜索的页数（微博搜索每页约20条帖子）
+PAGES_PER_KEYWORD = 5
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUTPUT_DIR = os.path.join(BASE_DIR, "data", "raw")
+# 每条帖子获取的评论页数（评论每页约20条）
+COMMENT_PAGES_PER_POST = 3
 
+# 输出文件名
+OUTPUT_CSV = "data/raw/weibo_posts.csv"
 
-def create_driver():
-    """创建 Edge 浏览器。"""
-    options = Options()
-
-    # 建议先不要无头模式，方便扫码登录、看页面是否被验证码拦截
-    # options.add_argument("--headless=new")
-
-    options.add_argument("--window-size=1400,900")
-    options.add_argument("--disable-gpu")
-
-    service = Service(EdgeChromiumDriverManager().install())
-    driver = webdriver.Edge(service=service, options=options)
-    return driver
+# 请求延迟（秒），模拟人类行为，防止被封
+REQUEST_DELAY_MIN = 2
+REQUEST_DELAY_MAX = 5
 
 
-def safe_find_text(parent, selectors):
-    """按多个选择器依次尝试提取文本。"""
-    for selector in selectors:
+# ==================== 主程序 ====================
+
+def setup_client():
+    """初始化微博客户端，设置请求头和反爬策略"""
+    # 创建客户端，login_cookies=False 表示不强制登录
+    # 但为了获取更完整的数据，可以设置为 True 并交互登录
+    client = WeiboClient(login_cookies=False)
+    return client
+
+
+def search_posts_by_keyword(client, keyword, pages):
+    """根据关键词搜索微博帖子"""
+    all_posts = []
+    print(f"🔍 正在搜索关键词: {keyword}")
+    for page in range(1, pages + 1):
         try:
-            elem = parent.find_element(By.CSS_SELECTOR, selector)
-            text = elem.text.strip()
-            if text:
-                return text
-        except Exception:
-            pass
-    return ""
-
-
-def parse_like_count(text):
-    """解析点赞数。"""
-    if not text:
-        return 0
-
-    text = text.replace("赞", "").strip()
-
-    try:
-        if "万" in text:
-            return int(float(text.replace("万", "")) * 10000)
-        return int(text)
-    except Exception:
-        return 0
-
-
-def extract_posts(driver, keyword):
-    """从当前微博搜索页提取帖子。"""
-    data = []
-
-    cards = driver.find_elements(By.CSS_SELECTOR, "div[action-type='feed_list_item']")
-
-    for card in cards:
-        content = safe_find_text(card, [
-            "p[node-type='feed_list_content_full']",
-            "p[node-type='feed_list_content']",
-            ".WB_text",
-        ])
-
-        if not content or len(content) < 5:
-            continue
-
-        user_name = safe_find_text(card, [
-            "a.name",
-            ".info .name",
-            ".W_f14",
-        ])
-
-        publish_time = safe_find_text(card, [
-            ".from a",
-            ".WB_from a",
-            ".from",
-        ])
-
-        like_text = safe_find_text(card, [
-            "a[action-type='feed_list_like']",
-            ".card-act li:nth-child(4)",
-            ".WB_row_like",
-        ])
-
-        # 尝试提取微博 ID
-        post_id = card.get_attribute("mid") or ""
-
-        data.append({
-            "platform": "微博",
-            "keyword": keyword,
-            "content": content,
-            "publish_time": publish_time,
-            "user_name": user_name or "微博用户",
-            "like_count": parse_like_count(like_text),
-            "post_id": post_id,
-        })
-
-    return data
-
-def search_posts(keyword, count=500, max_pages=50):
-    """搜索微博帖子。"""
-    driver = create_driver()
-    results = []
-
-    try:
-        # 先打开微博首页，方便你扫码登录
-        driver.get("https://weibo.com/")
-        print("[微博] 如果页面要求登录，请先在浏览器里扫码登录")
-        input("[微博] 登录完成后按回车继续；如果已经登录，也直接按回车：")
-
-        for page in range(1, max_pages + 1):
-            if len(results) >= count:
+            # search_posts 返回帖子列表和分页信息
+            posts, pagination = client.search_posts(keyword, page=page)
+            if not posts:
+                print(f"  第 {page} 页无结果，停止搜索")
                 break
-
-            url = (
-                f"https://s.weibo.com/weibo?q={quote(keyword)}"
-                f"&typeall=1&suball=1&page={page}"
-            )
-
-            print(f"[微博] 正在打开第 {page} 页：{url}")
-            driver.get(url)
-
-            time.sleep(random.uniform(4, 6))
-
-            # 滚动几次，让页面内容加载出来
-            for _ in range(3):
-                driver.execute_script("window.scrollBy(0, 800);")
-                time.sleep(random.uniform(1, 2))
-
-            page_data = extract_posts(driver, keyword)
-            print(f"[微博] 第 {page} 页提取到 {len(page_data)} 条")
-
-            results.extend(page_data)
-
-            time.sleep(random.uniform(2, 4))
-
-    finally:
-        driver.quit()
-
-    return results[:count]
+            all_posts.extend(posts)
+            print(f"  已获取第 {page} 页，共 {len(posts)} 条帖子")
+            # 随机延迟，防止请求过快
+            time.sleep(random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX))
+        except Exception as e:
+            print(f"  ⚠️ 搜索第 {page} 页时出错: {e}")
+            break
+    print(f"✅ 关键词 '{keyword}' 共获取 {len(all_posts)} 条帖子")
+    return all_posts
 
 
-def save_to_csv(data, output_path):
-    """保存 CSV。"""
+def get_comments_for_post(client, post, max_pages):
+    """获取单条帖子的评论"""
+    comments_data = []
+    try:
+        # get_all_comments 自动处理分页，获取所有评论
+        # 这里限制最大页数，避免单条帖子评论过多
+        comments, pagination = client.get_all_comments(
+            post.id,
+            max_pages=max_pages
+        )
+
+        if not comments:
+            return comments_data
+
+        # 提取需要的字段
+        for comment in comments:
+            # 处理评论内容，去除多余空白
+            text = comment.text.strip() if comment.text else ""
+            # 处理发布时间
+            created_at = comment.created_at if hasattr(comment, 'created_at') else ""
+
+            comments_data.append({
+                "comment_text": text,
+                "created_at": created_at,
+                "user_screen_name": comment.user_screen_name if hasattr(comment, 'user_screen_name') else "",
+                "like_count": comment.like_count if hasattr(comment, 'like_count') else 0,
+                "post_id": post.id,
+                "post_text": post.text[:50] + "..." if post.text else "",  # 截取帖子前50字作为上下文
+                "keyword": post.text[:10] if post.text else ""  # 简单标记关键词
+            })
+
+        print(f"  帖子 {post.id} 获取 {len(comments_data)} 条评论")
+
+    except Exception as e:
+        print(f"  ⚠️ 获取帖子 {post.id} 评论时出错: {e}")
+
+    return comments_data
+
+
+def save_to_csv(data, filename):
+    """保存数据到CSV文件"""
     if not data:
-        print("[微博] 没有抓到数据，不保存 CSV")
+        print("⚠️ 没有数据可保存")
         return
 
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
-    df = pd.DataFrame(data)
-
-    columns = [
-        "platform",
-        "keyword",
-        "content",
-        "publish_time",
-        "user_name",
+    fieldnames = [
+        "comment_text",
+        "created_at",
+        "user_screen_name",
         "like_count",
         "post_id",
+        "post_text",
+        "keyword"
     ]
 
-    df = df[columns]
-    df.to_csv(output_path, index=False, encoding="utf-8-sig")
+    with open(filename, 'w', newline='', encoding='utf-8-sig') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(data)
 
-    print(f"[微博] 已保存：{output_path}")
-    print(f"[微博] 共 {len(df)} 条")
+    print(f"✅ 数据已保存到 {filename}，共 {len(data)} 条评论")
 
 
 def main():
-    keyword = "美以伊战争"
-    output_path = os.path.join(OUTPUT_DIR, "微博_posts.csv")
+    """主函数"""
+    print("=" * 50)
+    print("🚀 微博评论爬虫启动")
+    print(f"📅 开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 50)
 
-    print("=" * 60)
-    print("[微博] 简化版爬虫启动")
-    print("=" * 60)
+    # 1. 初始化客户端
+    client = setup_client()
+    print("✅ 客户端初始化完成")
 
-    data = search_posts(keyword, count=1000, max_pages=100)
-    save_to_csv(data, output_path)
+    # 2. 存储所有评论
+    all_comments = []
 
-    print("[微博] 完成")
+    # 3. 遍历关键词搜索
+    for keyword in SEARCH_KEYWORDS:
+        # 3.1 搜索帖子
+        posts = search_posts_by_keyword(client, keyword, PAGES_PER_KEYWORD)
+
+        if not posts:
+            print(f"⚠️ 关键词 '{keyword}' 没有获取到帖子，跳过")
+            continue
+
+        # 3.2 遍历每条帖子获取评论
+        for idx, post in enumerate(posts):
+            print(f"\n📝 处理帖子 [{idx + 1}/{len(posts)}]: {post.text[:30] if post.text else '无文本'}...")
+
+            # 随机延迟，模拟人类浏览行为
+            time.sleep(random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX))
+
+            # 获取评论
+            comments = get_comments_for_post(client, post, COMMENT_PAGES_PER_POST)
+            all_comments.extend(comments)
+
+            # 每处理10条帖子输出一次进度
+            if (idx + 1) % 10 == 0:
+                print(f"  当前已收集 {len(all_comments)} 条评论")
+
+            # 如果已经达到目标数量，可以提前结束（但这里不强制）
+            # if len(all_comments) >= 1000:
+            #     break
+
+        # 如果已经达到目标数量，跳出外层循环
+        if len(all_comments) >= 1000:
+            print(f"\n🎯 已达到目标数量 {len(all_comments)} 条评论，停止爬取")
+            break
+
+    # 4. 保存结果
+    print("\n" + "=" * 50)
+    print(f"📊 共收集 {len(all_comments)} 条评论")
+
+    if all_comments:
+        save_to_csv(all_comments, OUTPUT_CSV)
+    else:
+        print("⚠️ 没有收集到任何评论数据")
+
+    print(f"🏁 结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 50)
 
 
 if __name__ == "__main__":
