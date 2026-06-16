@@ -108,8 +108,7 @@ def extract_posts(driver, keyword):
 
     return data
 
-
-def search_posts(keyword, count=30, max_pages=3):
+def search_posts(keyword, count=800, max_pages=50):
     """搜索微博帖子。"""
     driver = create_driver()
     results = []
@@ -187,7 +186,7 @@ def main():
     print("[微博] 简化版爬虫启动")
     print("=" * 60)
 
-    data = search_posts(keyword, count=30, max_pages=3)
+    data = search_posts(keyword, count=800, max_pages=50)
     save_to_csv(data, output_path)
 
     print("[微博] 完成")

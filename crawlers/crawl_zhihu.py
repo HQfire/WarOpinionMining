@@ -249,7 +249,7 @@ def extract_posts(driver, keyword):
     return data
 
 
-def search_posts(keyword, count=30, max_pages=3):
+def search_posts(keyword, count=800, max_pages=50):
     """
     搜索知乎内容。
 
@@ -360,8 +360,8 @@ def main():
 
     data = search_posts(
         keyword=keyword,
-        count=30,
-        max_pages=3,
+        count=800,
+        max_pages=50,
     )
 
     save_to_csv(data, output_path)
