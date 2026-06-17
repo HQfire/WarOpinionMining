@@ -5,7 +5,7 @@ Bilibili 评论爬虫（Selenium 手动登录 + 评论 API 优先版）
 1. 补齐 urllib.parse 导入，避免搜索 URL 构造时报 NameError。
 2. 搜索页改用 video 搜索，并更稳健地提取 BV 视频链接。
 3. 评论不再依赖页面 CSS 类名，优先通过 B 站评论 API 抓取。
-4. API 失败时保留 Selenium DOM 兜底，并输出 debug 截图/HTML，方便定位风控或页面结构变化。
+4. API 失败时保留 Selenium DOM 兜底，方便定位风控或页面结构变化。
 
 使用：
     python crawlers/crawl_bilibili.py
@@ -43,7 +43,6 @@ PROJECT_ROOT = HERE.parent if HERE.name.lower() == "crawlers" else HERE
 
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 OUTPUT_PATH = RAW_DIR / "bilibili_raw.csv"
-DEBUG_DIR = PROJECT_ROOT / "output" / "debug_bilibili"
 
 KEYWORDS = [
     "伊朗 以色列 美国",
@@ -102,7 +101,6 @@ MIXIN_KEY_ENC_TAB = [
 
 def ensure_dirs() -> None:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def random_sleep(min_delay: float = MIN_DELAY, max_delay: float = MAX_DELAY) -> None:
@@ -196,27 +194,6 @@ def save_to_csv(comments: List[Dict[str, object]], append: bool = True) -> None:
         writer.writerows(comments)
 
     print(f"已保存 {len(comments)} 条评论至 {OUTPUT_PATH}")
-
-
-def safe_name(text: str, max_len: int = 40) -> str:
-    text = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff_-]+", "_", text)
-    return text[:max_len].strip("_") or "debug"
-
-
-def dump_debug(driver: webdriver.Edge, name: str) -> None:
-    name = safe_name(name)
-
-    try:
-        driver.save_screenshot(str(DEBUG_DIR / f"{name}.png"))
-    except Exception:
-        pass
-
-    try:
-        with open(DEBUG_DIR / f"{name}.html", "w", encoding="utf-8") as f:
-            f.write(driver.page_source)
-    except Exception:
-        pass
-
 
 # ==================================================
 # 3. 浏览器和 requests 会话
@@ -334,8 +311,7 @@ def collect_video_urls_from_search(driver: webdriver.Edge, keyword: str) -> List
                 )
             )
         except TimeoutException:
-            print("  搜索页没有等到视频链接，保存 debug 文件")
-            dump_debug(driver, f"search_no_video_{keyword}_{page}")
+            print("  搜索页没有等到视频链接")
 
         for _ in range(3):
             driver.execute_script("window.scrollBy(0, document.body.scrollHeight / 3);")
@@ -974,8 +950,7 @@ def fetch_comments_by_dom(
     if rows:
         print(f"    DOM 兜底采集到 {len(rows)} 条")
     else:
-        dump_debug(driver, f"video_no_comments_{bvid}")
-        print(f"    DOM 兜底也没有采到，已保存 debug：{DEBUG_DIR}")
+        print(f"    DOM 兜底也没有采到")
 
     return rows
 
@@ -1093,7 +1068,6 @@ def crawl_bilibili() -> None:
 
         print(f"\n✅ B站爬虫完成！本次共采集 {total_comments} 条新评论")
         print(f"输出文件：{OUTPUT_PATH}")
-        print(f"Debug 目录：{DEBUG_DIR}")
 
 
 if __name__ == "__main__":
