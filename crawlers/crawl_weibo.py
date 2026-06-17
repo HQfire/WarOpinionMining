@@ -25,8 +25,7 @@ from selenium.webdriver.support import expected_conditions as EC
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
-OUTPUT_PATH = RAW_DIR / "weibo_raw.csv"
-DEBUG_DIR = PROJECT_ROOT / "output" / "debug_weibo"
+OUTPUT_PATH = RAW_DIR / "微博_raw.csv"
 
 KEYWORDS = [
     "伊朗 以色列 美国",
@@ -74,7 +73,6 @@ STANDARD_COLUMNS = [
 
 def ensure_dirs():
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def random_sleep(min_delay=MIN_DELAY, max_delay=MAX_DELAY):
@@ -844,28 +842,6 @@ def extract_comments_from_lines(lines, keyword, post_url, post_content, seen_con
     return new_comments
 
 
-def save_debug_snapshot(driver, post_index):
-    """
-    如果评论数量少，可以查看这些调试文件。
-    """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    text_path = DEBUG_DIR / f"post_{post_index}_{timestamp}.txt"
-    image_path = DEBUG_DIR / f"post_{post_index}_{timestamp}.png"
-
-    try:
-        body_text = driver.execute_script("return document.body.innerText;")
-        text_path.write_text(str(body_text), encoding="utf-8")
-        print(f"已保存页面文本调试文件：{text_path}")
-    except Exception:
-        pass
-
-    try:
-        driver.save_screenshot(str(image_path))
-        print(f"已保存页面截图调试文件：{image_path}")
-    except Exception:
-        pass
-
-
 def scroll_and_collect_comments(driver, keyword, post_url, post_content, post_index):
     all_comments = []
     seen_contents = set()
@@ -923,9 +899,6 @@ def scroll_and_collect_comments(driver, keyword, post_url, post_content, post_in
         if no_new_rounds >= MAX_NO_NEW_ROUNDS:
             print("连续多轮没有新增评论，停止当前帖子。")
             break
-
-    if len(all_comments) < 5:
-        save_debug_snapshot(driver, post_index)
 
     return all_comments[:MAX_COMMENTS_PER_POST]
 
@@ -1066,7 +1039,6 @@ def crawl_weibo():
 
     if not all_records:
         print("没有采集到评论。")
-        print("你可以查看 output/debug_weibo 里的调试文本和截图。")
         return
 
     save_records(all_records)
