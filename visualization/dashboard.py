@@ -12,8 +12,10 @@ import traceback
 import platform
 import ast
 from collections import Counter
+from pathlib import Path
 
 import pandas as pd
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import ENTITY_STOP
 
 #pyecharts 相关导入
