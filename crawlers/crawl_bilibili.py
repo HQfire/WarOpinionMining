@@ -1,19 +1,4 @@
-"""
-Bilibili 评论爬虫（Selenium 手动登录 + 评论 API 优先版）
-
-修复点：
-1. 补齐 urllib.parse 导入，避免搜索 URL 构造时报 NameError。
-2. 搜索页改用 video 搜索，并更稳健地提取 BV 视频链接。
-3. 评论不再依赖页面 CSS 类名，优先通过 B 站评论 API 抓取。
-4. API 失败时保留 Selenium DOM 兜底，并输出 debug 截图/HTML，方便定位风控或页面结构变化。
-
-使用：
-    python crawlers/crawl_bilibili.py
-
-依赖：
-    pip install selenium requests
-"""
-
+#Bilibili评论爬虫
 import csv
 import hashlib
 import json
@@ -33,11 +18,7 @@ from selenium.webdriver.edge.options import Options
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-
-# ==================================================
-# 1. 基本配置
-# ==================================================
-
+#1.基本配置
 HERE = Path(__file__).resolve().parent
 PROJECT_ROOT = HERE.parent if HERE.name.lower() == "crawlers" else HERE
 
@@ -972,18 +953,14 @@ def fetch_comments_by_dom(
         random_sleep(1.5, 3)
 
     if rows:
-        print(f"    DOM 兜底采集到 {len(rows)} 条")
+        print(f"DOM 兜底采集到 {len(rows)} 条")
     else:
         dump_debug(driver, f"video_no_comments_{bvid}")
-        print(f"    DOM 兜底也没有采到，已保存 debug：{DEBUG_DIR}")
+        print(f"DOM 兜底也没有采到，已保存 debug：{DEBUG_DIR}")
 
     return rows
 
-
-# ==================================================
 # 7. 主流程
-# ==================================================
-
 def crawl_bilibili() -> None:
     ensure_dirs()
 
@@ -996,23 +973,22 @@ def crawl_bilibili() -> None:
     try:
         driver.get("https://www.bilibili.com/")
 
-        print("🚀 浏览器已启动。请在打开的 B 站页面手动登录。")
-        print("   登录完成、确认右上角显示你的头像后，回到命令行按 Enter 继续。")
-
+        print("浏览器已启动。请在打开的 B 站页面手动登录。")
+        print("登录完成、确认右上角显示你的头像后，回到命令行按 Enter 继续。")
         input("登录完成后按 Enter 键继续...")
 
         for keyword in KEYWORDS:
             if total_comments >= MAX_COMMENTS_TOTAL:
                 break
 
-            print(f"\n🔍 搜索关键词: {keyword}")
+            print(f"\n搜索关键词: {keyword}")
 
             video_urls = collect_video_urls_from_search(driver, keyword)
 
-            print(f"  找到 {len(video_urls)} 个视频")
+            print(f"找到 {len(video_urls)} 个视频")
 
             if not video_urls:
-                print("  没找到视频，可能是搜索页结构变化、网络慢或触发风控。")
+                print("没找到视频")
                 continue
 
             for video_url in video_urls:
@@ -1024,7 +1000,7 @@ def crawl_bilibili() -> None:
                 if not bvid:
                     continue
 
-                print(f"\n  📺 处理视频: {video_url}")
+                print(f"\n处理视频: {video_url}")
 
                 if not open_url_with_retry(driver, video_url):
                     continue
@@ -1071,11 +1047,11 @@ def crawl_bilibili() -> None:
                     total_comments += len(unique_comments)
 
                     print(
-                        f"    本视频新增 {len(unique_comments)} 条，"
+                        f"本视频新增 {len(unique_comments)} 条，"
                         f"总计 {total_comments}"
                     )
                 else:
-                    print("    本视频没有新增评论")
+                    print("本视频没有新增评论")
 
                 random_sleep(3, 6)
 
@@ -1091,7 +1067,7 @@ def crawl_bilibili() -> None:
         except Exception:
             pass
 
-        print(f"\n✅ B站爬虫完成！本次共采集 {total_comments} 条新评论")
+        print(f"\nB站爬虫完成！本次共采集 {total_comments} 条新评论")
         print(f"输出文件：{OUTPUT_PATH}")
         print(f"Debug 目录：{DEBUG_DIR}")
 
