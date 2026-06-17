@@ -114,11 +114,6 @@ def clean_text(text):
 def parse_like_count(text):
     """
     解析知乎赞同数。
-
-    示例：
-        12 -> 12
-        1.2 万 -> 12000
-        赞同 36 -> 36
     """
     if not text:
         return 0
