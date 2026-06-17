@@ -2,7 +2,7 @@ import requests
 import csv
 import html
 
-API_KEY = "AIzaSyDb8TxSEDfJ54y7TpzOZDI4Iwqtvzob2IM"
+API_KEY = "AIzaSyDMur72PBdcm2DbY6viJ-ykssTzFrZqB0Q"
 
 proxies = {
     "http": "http://127.0.0.1:33210",
@@ -18,7 +18,7 @@ search_params = {
     "key": API_KEY,
     "q": "Israel Iran war",
     "part": "snippet",
-    "maxResults": 10,
+    "maxResults": 30,
     "type": "video"
 }
 
@@ -27,7 +27,7 @@ search_data = requests.get(search_url, params=search_params, proxies=proxies, ti
 # ======================
 # 准备CSV文件
 # ======================
-csv_file = open("youtube_comments.csv", "w", newline="", encoding="utf-8-sig")
+csv_file = open("../data/raw/youtube_comments.csv", "w", newline="", encoding="utf-8-sig")
 writer = csv.writer(csv_file)
 
 # 表头

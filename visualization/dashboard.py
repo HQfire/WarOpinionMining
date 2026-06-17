@@ -43,7 +43,7 @@ STOPWORDS_DIR = os.path.join(PROJECT_ROOT, "stopwords")
 # 主要数据文件路径
 SENTIMENT_RESULTS_PATH = os.path.join(DATA_DIR, "sentiment_results.csv")
 TOPIC_RESULTS_PATH = os.path.join(DATA_DIR, "topic_results.csv")
-CLEAN_DATA_PATH = os.path.join(DATA_DIR, "clean_data.csv")
+CLEAN_DATA_PATH = os.path.join(DATA_DIR, "cleaned_data.csv")
 
 # 词云输出路径
 WORDCLOUD_OUTPUT_PATH = os.path.join(DATA_DIR, "wordcloud.png")
