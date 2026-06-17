@@ -24,7 +24,6 @@ PROJECT_ROOT = HERE.parent if HERE.name.lower() == "crawlers" else HERE
 
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 OUTPUT_PATH = RAW_DIR / "bilibili_raw.csv"
-DEBUG_DIR = PROJECT_ROOT / "output" / "debug_bilibili"
 
 KEYWORDS = [
     "伊朗 以色列 美国",
@@ -76,21 +75,14 @@ MIXIN_KEY_ENC_TAB = [
     57, 62, 11, 36, 20, 34, 44, 52,
 ]
 
-
-# ==================================================
-# 2. 通用工具函数
-# ==================================================
-
+#2. 通用工具函数
 def ensure_dirs() -> None:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-
 
 def random_sleep(min_delay: float = MIN_DELAY, max_delay: float = MAX_DELAY) -> None:
     sleep_time = random.uniform(min_delay, max_delay)
     print(f"  等待 {sleep_time:.1f} 秒...")
     time.sleep(sleep_time)
-
 
 def clean_text(text: object) -> str:
     if text is None:
@@ -103,7 +95,6 @@ def clean_text(text: object) -> str:
 
     return text.strip()
 
-
 def detect_language(text: str) -> str:
     if re.search(r"[\u4e00-\u9fff]", text):
         return "zh"
@@ -111,11 +102,9 @@ def detect_language(text: str) -> str:
         return "en"
     return "other"
 
-
 def make_comment_id(video_id: str, cid: object) -> str:
     raw = f"bilibili_{video_id}_{cid}"
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
-
 
 def timestamp_to_str(ts: object) -> str:
     try:
@@ -123,11 +112,9 @@ def timestamp_to_str(ts: object) -> str:
     except Exception:
         return clean_text(ts)
 
-
 def extract_bvid(url_or_text: str) -> Optional[str]:
     match = re.search(r"BV[0-9A-Za-z]+", url_or_text or "")
     return match.group(0) if match else None
-
 
 def normalize_video_url(raw_url: str) -> Optional[str]:
     if not raw_url:
@@ -141,7 +128,6 @@ def normalize_video_url(raw_url: str) -> Optional[str]:
         return None
 
     return f"https://www.bilibili.com/video/{bvid}"
-
 
 def load_existing_comment_ids() -> Set[str]:
     ids: Set[str] = set()
@@ -161,7 +147,6 @@ def load_existing_comment_ids() -> Set[str]:
 
     return ids
 
-
 def save_to_csv(comments: List[Dict[str, object]], append: bool = True) -> None:
     if not comments:
         return
@@ -178,31 +163,7 @@ def save_to_csv(comments: List[Dict[str, object]], append: bool = True) -> None:
 
     print(f"已保存 {len(comments)} 条评论至 {OUTPUT_PATH}")
 
-
-def safe_name(text: str, max_len: int = 40) -> str:
-    text = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff_-]+", "_", text)
-    return text[:max_len].strip("_") or "debug"
-
-
-def dump_debug(driver: webdriver.Edge, name: str) -> None:
-    name = safe_name(name)
-
-    try:
-        driver.save_screenshot(str(DEBUG_DIR / f"{name}.png"))
-    except Exception:
-        pass
-
-    try:
-        with open(DEBUG_DIR / f"{name}.html", "w", encoding="utf-8") as f:
-            f.write(driver.page_source)
-    except Exception:
-        pass
-
-
-# ==================================================
-# 3. 浏览器和 requests 会话
-# ==================================================
-
+#3. 浏览器和 requests 会话
 def create_driver() -> webdriver.Edge:
     options = Options()
 
@@ -238,7 +199,6 @@ def create_driver() -> webdriver.Edge:
 
     return driver
 
-
 def build_session_from_driver(driver: webdriver.Edge) -> requests.Session:
     session = requests.Session()
 
@@ -266,11 +226,7 @@ def build_session_from_driver(driver: webdriver.Edge) -> requests.Session:
 
     return session
 
-
-# ==================================================
 # 4. 搜索视频
-# ==================================================
-
 def open_url_with_retry(driver: webdriver.Edge, url: str, retry: int = 2) -> bool:
     for i in range(retry + 1):
         try:
@@ -315,8 +271,7 @@ def collect_video_urls_from_search(driver: webdriver.Edge, keyword: str) -> List
                 )
             )
         except TimeoutException:
-            print("  搜索页没有等到视频链接，保存 debug 文件")
-            dump_debug(driver, f"search_no_video_{keyword}_{page}")
+            pass
 
         for _ in range(3):
             driver.execute_script("window.scrollBy(0, document.body.scrollHeight / 3);")
@@ -344,11 +299,7 @@ def collect_video_urls_from_search(driver: webdriver.Edge, keyword: str) -> List
 
     return video_urls
 
-
-# ==================================================
-# 5. B 站接口：视频 aid 和评论
-# ==================================================
-
+#5. B 站接口：视频 aid 和评论
 def get_aid_by_bvid(session: requests.Session, bvid: str) -> Optional[int]:
     url = "https://api.bilibili.com/x/web-interface/view"
 
@@ -373,7 +324,6 @@ def get_aid_by_bvid(session: requests.Session, bvid: str) -> Optional[int]:
     except Exception:
         print(f"    aid 为空或格式异常：{aid}")
         return None
-
 
 def parse_reply_item(
     reply: Dict[str, object],
@@ -416,7 +366,6 @@ def parse_reply_item(
         "source_url": video_url,
         "crawl_time": crawl_time,
     }
-
 
 def flatten_replies(
     replies: Iterable[Dict[str, object]],
@@ -467,7 +416,6 @@ def flatten_replies(
 
     return rows
 
-
 def fetch_comments_by_old_api(
     session: requests.Session,
     *,
@@ -479,7 +427,7 @@ def fetch_comments_by_old_api(
     max_comments: int,
 ) -> Tuple[List[Dict[str, object]], Optional[str]]:
     """
-    旧评论接口优先。
+    评论接口优先。
     优点：简单、稳定时很好用。
     缺点：部分视频或环境下可能被限制。
     """
@@ -551,7 +499,6 @@ def fetch_comments_by_old_api(
 
     return all_rows, last_error
 
-
 def get_wbi_keys(session: requests.Session) -> Optional[Tuple[str, str]]:
     try:
         resp = session.get(
@@ -576,11 +523,9 @@ def get_wbi_keys(session: requests.Session) -> Optional[Tuple[str, str]]:
 
     return None
 
-
 def get_mixin_key(img_key: str, sub_key: str) -> str:
     raw = img_key + sub_key
     return "".join(raw[i] for i in MIXIN_KEY_ENC_TAB if i < len(raw))[:32]
-
 
 def encode_wbi(
     params: Dict[str, object],
@@ -592,7 +537,7 @@ def encode_wbi(
     signed_params = dict(params)
     signed_params["wts"] = int(time.time())
 
-    # B 站 WBI 签名要求过滤这些字符
+    #B站WBI签名要求过滤这些字符
     chr_filter = "!'()*"
 
     clean_params = {}
@@ -609,7 +554,6 @@ def encode_wbi(
     ).hexdigest()
 
     return clean_params
-
 
 def fetch_comments_by_wbi_api(
     session: requests.Session,
@@ -771,11 +715,7 @@ def fetch_comments_by_api(
 
     return []
 
-
-# ==================================================
-# 6. Selenium DOM 兜底采集
-# ==================================================
-
+#6.SeleniumDOM兜底采集
 def scroll_to_comments(driver: webdriver.Edge) -> None:
     for _ in range(18):
         try:
@@ -804,7 +744,6 @@ def scroll_to_comments(driver: webdriver.Edge) -> None:
             pass
 
         random_sleep(0.8, 1.5)
-
 
 def collect_comment_texts_from_dom(
     driver: webdriver.Edge,
@@ -875,7 +814,6 @@ def collect_comment_texts_from_dom(
 
     return [clean_text(x) for x in texts if clean_text(x)]
 
-
 def fetch_comments_by_dom(
     driver: webdriver.Edge,
     *,
@@ -906,7 +844,7 @@ def fetch_comments_by_dom(
             if len(text) < 5:
                 continue
 
-            # 粗略过滤页面无关文本
+            #粗略过滤页面无关文本
             if any(
                 bad in text
                 for bad in ["相关推荐", "弹幕列表", "立即登录", "投稿", "充电"]
@@ -953,14 +891,12 @@ def fetch_comments_by_dom(
         random_sleep(1.5, 3)
 
     if rows:
-        print(f"DOM 兜底采集到 {len(rows)} 条")
-    else:
-        dump_debug(driver, f"video_no_comments_{bvid}")
-        print(f"DOM 兜底也没有采到，已保存 debug：{DEBUG_DIR}")
+        print(f"    DOM 兜底采集到 {len(rows)} 条")
 
     return rows
 
-# 7. 主流程
+
+#7. 主流程
 def crawl_bilibili() -> None:
     ensure_dirs()
 
@@ -1069,8 +1005,6 @@ def crawl_bilibili() -> None:
 
         print(f"\nB站爬虫完成！本次共采集 {total_comments} 条新评论")
         print(f"输出文件：{OUTPUT_PATH}")
-        print(f"Debug 目录：{DEBUG_DIR}")
-
 
 if __name__ == "__main__":
     crawl_bilibili()

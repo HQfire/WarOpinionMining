@@ -9,9 +9,7 @@ proxies = {
     "https": "http://127.0.0.1:33210",
 }
 
-# ======================
-# 搜索视频
-# ======================
+#搜索视频
 search_url = "https://www.googleapis.com/youtube/v3/search"
 
 search_params = {
@@ -24,18 +22,14 @@ search_params = {
 
 search_data = requests.get(search_url, params=search_params, proxies=proxies, timeout=30).json()
 
-# ======================
-# 准备CSV文件
-# ======================
+#准备CSV文件
 csv_file = open("../data/raw/youtube_comments.csv", "w", newline="", encoding="utf-8-sig")
 writer = csv.writer(csv_file)
 
-# 表头
+#表头
 writer.writerow(["video_title", "video_id", "comment"])
 
-# ======================
-# 3️⃣ 获取评论
-# ======================
+#获取评论
 comment_url = "https://www.googleapis.com/youtube/v3/commentThreads"
 
 for item in search_data.get("items", []):
@@ -61,9 +55,7 @@ for item in search_data.get("items", []):
             comment = c["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
             comment = html.unescape(comment)
 
-            print("👉", comment)
-
-            # 写入CSV
+            #写入CSV
             writer.writerow([title, video_id, comment])
 
     except Exception as e:

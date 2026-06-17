@@ -1,4 +1,4 @@
-#主题分类模块（规则+TF-IDF&KMeans聚类）
+#主题分类模块
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -16,19 +16,43 @@ add_jieba_userdict()
 
 #扩展规则分类关键词
 RULE_MAP = [
-    ('和平反战', ['和平', '反战', '停火', '谈判', '结束战争']),
-    ('战争影响', ['影响', '经济', '油价', '生活', '物价', '后果', '危机']),
-    ('势力评价', ['美国', '以色列', '伊朗', '特朗普', '内塔尼亚胡', '拜登', '政府']),
-    ('中国态度', ['中国', '网友', '我们', '自己', '站队', '置身']),
-    ('军事行动', ['打击', '空袭', '导弹', '航母', '反击', '防御']),
-    ('人道灾难', ['平民', '伤亡', '难民', '儿童', '医院', '人道']),
-    ('媒体舆论', ['报道', '媒体', '新闻', '视频', '截图', '真实性']),
+    # 中文关键词 + 英文关键词，保证 YouTube 英文评论也能被分类
+    ('和平反战',[
+        '和平', '反战', '停火', '谈判', '结束战争',
+        'peace', 'ceasefire', 'anti-war', 'stop war', 'negotiation'
+    ]),
+    ('战争影响',[
+        '影响', '经济', '油价', '生活', '物价', '后果', '危机',
+        'economy', 'oil', 'price', 'crisis', 'impact', 'consequence'
+    ]),
+    ('势力评价',[
+        '美国', '以色列', '伊朗', '特朗普', '内塔尼亚胡', '拜登', '政府',
+        'america', 'usa', 'us', 'israel', 'iran', 'trump', 'biden', 'government'
+    ]),
+    ('中国态度',[
+        '中国', '网友', '我们', '自己', '站队', '置身',
+        'china', 'chinese'
+    ]),
+    ('军事行动',[
+        '打击', '空袭', '导弹', '航母', '反击', '防御', '轰炸',
+        'attack', 'strike', 'missile', 'bomb', 'bombing', 'defense', 'military'
+    ]),
+    ('人道灾难',[
+        '平民', '伤亡', '难民', '儿童', '医院', '人道', '死亡',
+        'civilian', 'civilians', 'casualty', 'casualties', 'refugee', 'refugees',
+        'children', 'hospital', 'humanitarian', 'death', 'dead'
+    ]),
+    ('媒体舆论',[
+        '报道', '媒体', '新闻', '视频', '截图', '真实性',
+        'media', 'news', 'report', 'reported', 'video', 'truth'
+    ]),
 ]
 
 def rule_based_label(text: str) -> str:
-    #基于关键词的规则分类
+    #基于关键词的规则分类，兼容英文大小写
+    text = str(text).lower()
     for label, keywords in RULE_MAP:
-        if any(k in text for k in keywords):
+        if any(k.lower() in text for k in keywords):
             return label
     return '其他'
 

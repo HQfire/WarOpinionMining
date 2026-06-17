@@ -18,11 +18,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-
-# ==================================================
-# 1. 基本配置
-# ==================================================
-
+#1. 基本配置
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 OUTPUT_PATH = RAW_DIR / "微博_raw.csv"
@@ -35,20 +31,20 @@ KEYWORDS = [
     "中东局势 伊朗 以色列",
 ]
 
-# 搜索和采集数量控制
+#搜索和采集数量控制
 MAX_SEARCH_PAGES_PER_KEYWORD = 3
 MAX_POSTS_PER_KEYWORD = 10
 MAX_COMMENTS_PER_POST = 200
 MAX_COMMENTS_TOTAL = 1500
 
-# 每个帖子评论区滚动轮数
-SCROLL_ROUNDS_PER_POST = 25
+#每个帖子评论区滚动轮数
+SCROLL_ROUNDS_PER_POST = 15
 
-# 每轮最多尝试点击“更多评论”的次数
+#每轮最多尝试点击“更多评论”的次数
 MAX_MORE_BUTTON_CLICKS_PER_POST = 10
 
 # 连续多少轮没有新增评论就停止当前帖子
-MAX_NO_NEW_ROUNDS = 6
+MAX_NO_NEW_ROUNDS = 3
 
 MIN_DELAY = 2
 MAX_DELAY = 5
@@ -66,20 +62,14 @@ STANDARD_COLUMNS = [
     "crawl_time",
 ]
 
-
-# ==================================================
-# 2. 通用工具函数
-# ==================================================
-
+#2. 通用工具函数
 def ensure_dirs():
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-
 
 def random_sleep(min_delay=MIN_DELAY, max_delay=MAX_DELAY):
     sleep_time = random.uniform(min_delay, max_delay)
     print(f"等待 {sleep_time:.1f} 秒...")
     time.sleep(sleep_time)
-
 
 def clean_text(text):
     if text is None:
@@ -94,7 +84,6 @@ def clean_text(text):
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
-
 def create_driver():
     options = Options()
     options.add_argument("--start-maximized")
@@ -103,12 +92,10 @@ def create_driver():
     driver = webdriver.Edge(options=options)
     return driver
 
-
 def build_search_url(keyword, page):
     base_url = "https://s.weibo.com/weibo"
     query = quote(keyword)
     return f"{base_url}?q={query}&page={page}"
-
 
 def normalize_url(url):
     if not url:
@@ -121,7 +108,6 @@ def normalize_url(url):
         return "https://weibo.com" + url
 
     return url
-
 
 def convert_to_mobile_detail_url(url):
     """
@@ -141,7 +127,7 @@ def convert_to_mobile_detail_url(url):
     parsed = urlparse(url)
     path = parsed.path.strip("/")
 
-    # 常见 PC 链接：/用户id/微博短码
+    #常见 PC 链接：/用户id/微博短码
     parts = path.split("/")
     if len(parts) >= 2:
         possible_mblog_id = parts[-1]
@@ -150,10 +136,8 @@ def convert_to_mobile_detail_url(url):
 
     return url
 
-
 def contains_chinese(text):
     return re.search(r"[\u4e00-\u9fff]", str(text)) is not None
-
 
 def parse_like_count(text):
     if not text:
@@ -178,7 +162,6 @@ def parse_like_count(text):
     except ValueError:
         return 0
 
-
 def is_time_text(text):
     text = clean_text(text)
 
@@ -195,7 +178,6 @@ def is_time_text(text):
     ]
 
     return any(re.search(pattern, text) for pattern in patterns)
-
 
 def relevance_score(text):
     text = clean_text(text)
@@ -216,7 +198,6 @@ def relevance_score(text):
 
     return country_count * 2 + conflict_count
 
-
 def is_related_to_topic(text):
     text = clean_text(text)
 
@@ -226,7 +207,7 @@ def is_related_to_topic(text):
     if relevance_score(text) >= 3:
         return True
 
-    # 搜索词本身已经比较精准，放宽一点，避免收集不到帖子
+    #搜索词本身已经比较精准，放宽一点，避免收集不到帖子
     if "伊朗" in text and "以色列" in text:
         return True
 
@@ -235,11 +216,7 @@ def is_related_to_topic(text):
 
     return False
 
-
-# ==================================================
-# 3. 评论识别规则
-# ==================================================
-
+#3. 评论识别规则
 INVALID_UI_EXACT = {
     "评论",
     "转发",
@@ -294,7 +271,6 @@ INVALID_UI_PHRASES = [
     "用微博扫码",
 ]
 
-
 def is_ui_or_noise(text):
     text = clean_text(text)
 
@@ -311,7 +287,7 @@ def is_ui_or_noise(text):
     if is_time_text(text):
         return True
 
-    # 过滤来源行，比如“06月08日 09:19 来自湖北”
+    #过滤来源行，比如“06月08日 09:19 来自湖北”
     if "来自" in text and re.search(r"\d{1,2}[:：]\d{2}", text):
         return True
 
@@ -322,7 +298,6 @@ def is_ui_or_noise(text):
         return True
 
     return False
-
 
 def looks_like_user_name(text):
     text = clean_text(text)
@@ -372,7 +347,6 @@ def looks_like_user_name(text):
 
     return True
 
-
 def is_valid_comment_content(text):
     text = clean_text(text)
 
@@ -396,7 +370,6 @@ def is_valid_comment_content(text):
         return False
 
     return True
-
 
 def split_colon_comment(line):
     """
@@ -422,7 +395,6 @@ def split_colon_comment(line):
 
     return user_name, content
 
-
 def is_similar_to_post_content(content, post_content):
     content = clean_text(content)
     post_content = clean_text(post_content)
@@ -444,11 +416,7 @@ def is_similar_to_post_content(content, post_content):
 
     return False
 
-
-# ==================================================
-# 4. 搜索页收集帖子链接
-# ==================================================
-
+#4. 搜索页收集帖子链接
 def get_weibo_cards(driver):
     selectors = [
         "div.card-wrap[action-type='feed_list_item']",
@@ -466,7 +434,6 @@ def get_weibo_cards(driver):
 
     return []
 
-
 def extract_post_content(card):
     selectors = [
         "p.txt",
@@ -483,7 +450,6 @@ def extract_post_content(card):
             continue
 
     return ""
-
 
 def extract_post_url(card):
     selectors = [
@@ -580,11 +546,7 @@ def collect_post_links_from_search(driver, keyword):
 
     return post_infos
 
-
-# ==================================================
-# 5. 页面操作
-# ==================================================
-
+#5. 页面操作
 def click_comment_tab_if_possible(driver):
     xpaths = [
         "//*[normalize-space()='评论']",
@@ -612,7 +574,6 @@ def click_comment_tab_if_possible(driver):
             continue
 
     return False
-
 
 def click_more_buttons(driver):
     """
@@ -675,24 +636,18 @@ def click_more_buttons(driver):
 
     return clicked_count
 
-
 def scroll_down_incrementally(driver):
     """
     不直接跳到底，避免虚拟列表丢失评论。
     """
     driver.execute_script("window.scrollBy(0, Math.floor(window.innerHeight * 0.8));")
 
-
 def scroll_to_comment_area(driver):
     for _ in range(5):
         scroll_down_incrementally(driver)
         random_sleep(1, 2)
 
-
-# ==================================================
-# 6. 评论提取
-# ==================================================
-
+#6. 评论提取
 def collect_visible_lines(driver):
     try:
         body_text = driver.execute_script("return document.body.innerText;")
@@ -708,7 +663,6 @@ def collect_visible_lines(driver):
 
     return lines
 
-
 def find_publish_time_nearby(lines, index):
     for offset in range(1, 6):
         if index + offset >= len(lines):
@@ -723,7 +677,6 @@ def find_publish_time_nearby(lines, index):
             return candidate
 
     return ""
-
 
 def find_like_count_nearby(lines, index):
     for offset in range(1, 10):
@@ -745,7 +698,6 @@ def find_like_count_nearby(lines, index):
             return parse_like_count(candidate)
 
     return 0
-
 
 def add_comment(comments, seen_contents, keyword, post_url, user_name, content, publish_time="", like_count=0):
     content = clean_text(content)
@@ -774,7 +726,6 @@ def add_comment(comments, seen_contents, keyword, post_url, user_name, content, 
 
     return True
 
-
 def extract_comments_from_lines(lines, keyword, post_url, post_content, seen_contents):
     """
     同时支持两种格式：
@@ -791,7 +742,7 @@ def extract_comments_from_lines(lines, keyword, post_url, post_content, seen_con
 
         line = clean_text(line)
 
-        # 格式一：用户名：评论内容
+        #格式一：用户名：评论内容
         if "：" in line or ":" in line:
             user_name, content = split_colon_comment(line)
 
@@ -814,7 +765,7 @@ def extract_comments_from_lines(lines, keyword, post_url, post_content, seen_con
                 if added:
                     new_comments.extend(temp)
 
-        # 格式二：用户名一行，下一行是评论内容
+        #格式二：用户名一行，下一行是评论内容
         if looks_like_user_name(line):
             if index + 1 < len(lines):
                 possible_content = clean_text(lines[index + 1])
@@ -841,14 +792,13 @@ def extract_comments_from_lines(lines, keyword, post_url, post_content, seen_con
 
     return new_comments
 
-
 def scroll_and_collect_comments(driver, keyword, post_url, post_content, post_index):
     all_comments = []
     seen_contents = set()
     no_new_rounds = 0
     total_more_clicks = 0
 
-    # 初始提取
+    #初始提取
     lines = collect_visible_lines(driver)
     new_comments = extract_comments_from_lines(
         lines,
@@ -864,7 +814,7 @@ def scroll_and_collect_comments(driver, keyword, post_url, post_content, post_in
         if len(all_comments) >= MAX_COMMENTS_PER_POST:
             break
 
-        # 每几轮尝试点击一次更多按钮
+        #每几轮尝试点击一次更多按钮
         if total_more_clicks < MAX_MORE_BUTTON_CLICKS_PER_POST:
             clicked = click_more_buttons(driver)
             total_more_clicks += clicked
@@ -902,11 +852,7 @@ def scroll_and_collect_comments(driver, keyword, post_url, post_content, post_in
 
     return all_comments[:MAX_COMMENTS_PER_POST]
 
-
-# ==================================================
-# 7. 爬取单个帖子评论
-# ==================================================
-
+#7. 爬取单个帖子评论
 def crawl_comments_from_post(driver, post_info, post_index):
     keyword = post_info["keyword"]
     post_url = post_info["post_url"]
@@ -952,11 +898,7 @@ def crawl_comments_from_post(driver, post_info, post_index):
 
     return comments
 
-
-# ==================================================
-# 8. 保存数据
-# ==================================================
-
+#8. 保存数据
 def save_records(records):
     df = pd.DataFrame(records, columns=STANDARD_COLUMNS)
 
@@ -972,11 +914,7 @@ def save_records(records):
     print(f"共采集评论：{len(df)} 条")
     print(f"保存位置：{OUTPUT_PATH}")
 
-
-# ==================================================
-# 9. 主流程
-# ==================================================
-
+#9. 主流程
 def crawl_weibo():
     ensure_dirs()
 
@@ -1042,7 +980,6 @@ def crawl_weibo():
         return
 
     save_records(all_records)
-
 
 if __name__ == "__main__":
     crawl_weibo()

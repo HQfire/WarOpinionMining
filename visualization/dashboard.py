@@ -10,19 +10,18 @@ import os
 import sys
 import traceback
 import platform
+import ast
+from collections import Counter
 
 import pandas as pd
+from config import ENTITY_STOP
 
-# ============================================================
-# pyecharts 相关导入
-# ============================================================
+#pyecharts 相关导入
 from pyecharts import options as opts
 from pyecharts.charts import Bar, Line, Page, Pie
 from pyecharts.globals import ThemeType, CurrentConfig
 
-# ============================================================
-# 词云相关库（可选导入）
-# ============================================================
+#词云相关库
 try:
     from wordcloud import WordCloud
     import matplotlib.pyplot as plt
@@ -32,28 +31,24 @@ except ImportError as e:
     print(f"[Dashboard] 警告: 词云相关库未安装，将跳过词云图生成: {e}")
     WORDCLOUD_AVAILABLE = False
 
-# ============================================================
-# 路径常量：所有路径基于项目根目录
-# ============================================================
+#路径常量：所有路径基于项目根目录
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(PROJECT_ROOT, "data", "processed")
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
 STOPWORDS_DIR = os.path.join(PROJECT_ROOT, "stopwords")
 
-# 主要数据文件路径
+#主要数据文件路径
 SENTIMENT_RESULTS_PATH = os.path.join(DATA_DIR, "sentiment_results.csv")
 TOPIC_RESULTS_PATH = os.path.join(DATA_DIR, "topic_results.csv")
 CLEAN_DATA_PATH = os.path.join(DATA_DIR, "cleaned_data.csv")
 
-# 词云输出路径
+#词云输出路径
 WORDCLOUD_OUTPUT_PATH = os.path.join(DATA_DIR, "wordcloud.png")
 
-# 日志前缀，便于追踪
+#日志前缀，便于追踪
 LOG_PREFIX = "[Dashboard]"
 
-# ============================================================
-# 字体路径（多平台支持）
-# ============================================================
+#字体路径
 def get_font_path():
     """获取系统中可用的中文字体路径"""
     system = platform.system()
@@ -72,15 +67,13 @@ def get_font_path():
         font_paths.append("/usr/share/fonts/truetype/arphic/ukai.ttc")
         font_paths.append("/usr/share/fonts/truetype/noto/NotoSansCJK-SC.ttc")
     
-    # 返回第一个存在的字体路径
+    #返回第一个存在的字体路径
     for path in font_paths:
         if os.path.exists(path):
             return path
     return None
 
-# ============================================================
-# 辅助函数
-# ============================================================
+#辅助函数
 def ensure_dir(dir_path):
     """确保目录存在，如果不存在则创建。"""
     if not os.path.exists(dir_path):
@@ -130,7 +123,7 @@ def generate_demo_data():
         else:
             score = random.uniform(0.45, 0.55)
         
-        # 生成随机时间（最近100天内）
+        #生成随机时间
         days_ago = random.randint(0, 100)
         publish_time = (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d %H:%M:%S")
         
@@ -156,7 +149,7 @@ def generate_demo_data():
     df = pd.DataFrame(data)
     topic_df = pd.DataFrame(topic_data)
     
-    # 保存演示数据
+    #保存演示数据
     ensure_dir(DATA_DIR)
     df.to_csv(SENTIMENT_RESULTS_PATH, index=False, encoding="utf-8-sig")
     topic_df.to_csv(TOPIC_RESULTS_PATH, index=False, encoding="utf-8-sig")
@@ -177,7 +170,7 @@ def load_sentiment_data():
         except Exception as e:
             print(f"{LOG_PREFIX} 读取情感结果文件失败: {e}")
 
-    # 回退：尝试读取清洗后的数据
+    #回退：尝试读取清洗后的数据
     if os.path.exists(CLEAN_DATA_PATH):
         try:
             df = pd.read_csv(CLEAN_DATA_PATH, encoding="utf-8-sig")
@@ -194,7 +187,6 @@ def load_sentiment_data():
     print(f"{LOG_PREFIX} 演示数据已生成: {len(df)} 条记录")
     return df
 
-
 def load_topic_data():
     """加载主题分类结果数据。"""
     if not os.path.exists(TOPIC_RESULTS_PATH):
@@ -210,10 +202,7 @@ def load_topic_data():
         print(f"{LOG_PREFIX} 读取主题分类结果失败: {e}")
         return None
 
-
-# ============================================================
-# 结论生成与分析
-# ============================================================
+#结论生成与分析
 def generate_conclusions(df, topic_df=None):
     """基于分析数据生成美以伊战争舆论结论。"""
     conclusions = []
@@ -456,10 +445,7 @@ def build_stat_cards(df):
     </div>"""
     return cards
 
-
-# ============================================================
-# 图表1: 情感分布饼图
-# ============================================================
+#图表1: 情感分布饼图
 def plot_sentiment_pie(df):
     """生成情感分布饼图。"""
     # 兼容多种列名
@@ -510,10 +496,7 @@ def plot_sentiment_pie(df):
 
     return pie_chart
 
-
-# ============================================================
-# 图表2: 各平台情感倾向对比柱状图
-# ============================================================
+#图表2: 各平台情感倾向对比柱状图
 def plot_platform_comparison(df):
     """生成各平台情感倾向对比的分组柱状图。"""
     sentiment_col = "sentiment_label" if "sentiment_label" in df.columns else "sentiment"
@@ -575,10 +558,7 @@ def plot_platform_comparison(df):
 
     return bar_chart
 
-
-# ============================================================
-# 图表3: 舆情情感时间趋势折线图
-# ============================================================
+#图表3: 舆情情感时间趋势折线图
 def plot_time_trend(df):
     """生成舆情情感时间趋势折线图。"""
     required_cols = ["publish_time", "sentiment_score"]
@@ -657,10 +637,7 @@ def plot_time_trend(df):
         traceback.print_exc()
         return None
 
-
-# ============================================================
-# 图表4: 主题分类分布柱状图
-# ============================================================
+#图表4: 主题分类分布柱状图
 def plot_topic_distribution(df):
     """生成主题分类分布柱状图。"""
     if df is None:
@@ -740,23 +717,17 @@ def plot_topic_distribution(df):
 
     return bar_chart
 
-
-# ============================================================
-# 图表5: 词云图
-# ============================================================
+#图表5: 词云图
 def plot_wordcloud(df):
-    """生成词云图。"""
+    """生成词云图。优先使用 tokens，避免从原始 content 中重新引入噪声。"""
     if not WORDCLOUD_AVAILABLE:
         print(f"{LOG_PREFIX} 警告: 词云库不可用，跳过词云图")
-        return None
-
-    if "content" not in df.columns:
-        print(f"{LOG_PREFIX} 警告: 数据中缺少 'content' 列，跳过词云图")
         return None
 
     ensure_dir(DATA_DIR)
 
     stopwords = set()
+
     chinese_stopwords_path = os.path.join(STOPWORDS_DIR, "chinese_stopwords.txt")
     if os.path.exists(chinese_stopwords_path):
         try:
@@ -765,7 +736,7 @@ def plot_wordcloud(df):
                     word = line.strip()
                     if word:
                         stopwords.add(word)
-            print(f"{LOG_PREFIX} 已加载中文停用词 {len(stopwords)} 个")
+                        stopwords.add(word.lower())
         except Exception as e:
             print(f"{LOG_PREFIX} 加载中文停用词失败: {e}")
 
@@ -777,49 +748,110 @@ def plot_wordcloud(df):
                     word = line.strip()
                     if word:
                         stopwords.add(word)
-            print(f"{LOG_PREFIX} 已加载英文停用词，当前停用词总数 {len(stopwords)} 个")
+                        stopwords.add(word.lower())
         except Exception as e:
             print(f"{LOG_PREFIX} 加载英文停用词失败: {e}")
 
-    war_stopwords = {"war", "战争", "conflict", "冲突", "Iran", "iran",
-                     "美国", "伊朗", "以色列", "US", "USA", "Israel", "israel",
-                     "中东", "军事", "military", "中东战争", "波斯湾", "核", "nuclear"}
-    stopwords.update(war_stopwords)
-    print(f"{LOG_PREFIX} 已添加战争相关停用词 {len(war_stopwords)} 个，总停用词数 {len(stopwords)}")
+    # 词云额外屏蔽词
+    wordcloud_filter = {
+        "war", "战争", "conflict", "冲突", "iran", "israel", "usa", "us",
+        "america", "american", "trump", "biden", "netanyahu",
+        "中东", "军事", "military", "nuclear", "news", "media",
+        "video", "comment", "comments",
+        "think", "know", "see", "say", "make", "get", "want", "like",
+        "people", "time", "year", "years", "one", "even", "still",
+        "really", "very", "good", "right", "going",
+        "视频", "评论", "感觉", "真的", "已经", "现在", "这个", "那个",
+        "问题", "事情", "开始", "只能", "才能", "看着", "存在",
+    }
 
-    all_text = " ".join(df["content"].dropna().astype(str).tolist())
+    entity_stopwords = {str(w).strip().lower() for w in ENTITY_STOP if str(w).strip()}
 
-    if not all_text.strip():
-        print(f"{LOG_PREFIX} 警告: 评论文本内容为空，跳过词云图")
+    stopwords.update(wordcloud_filter)
+    stopwords.update(entity_stopwords)
+
+    print(f"{LOG_PREFIX} 已加载词云屏蔽词，总停用词数 {len(stopwords)}")
+
+    words_for_cloud = []
+
+    # 优先使用 tokens，因为 tokens 已经在 clean_data.py 中清洗过
+    if "tokens" in df.columns:
+        for value in df["tokens"].dropna():
+            try:
+                tokens = ast.literal_eval(value) if isinstance(value, str) else value
+            except Exception:
+                tokens = str(value).split()
+
+            if not isinstance(tokens, list):
+                continue
+
+            for token in tokens:
+                word = str(token).strip()
+                word_lower = word.lower()
+
+                if len(word_lower) <= 1:
+                    continue
+                if word_lower in stopwords:
+                    continue
+                if word_lower.isdigit():
+                    continue
+
+                words_for_cloud.append(word_lower)
+
+    # 如果没有 tokens，再退回 cleaned_text
+    elif "cleaned_text" in df.columns:
+        all_text = " ".join(df["cleaned_text"].dropna().astype(str).tolist())
+        words = jieba.cut(all_text, cut_all=False)
+
+        for word in words:
+            word = str(word).strip()
+            word_lower = word.lower()
+
+            if len(word_lower) <= 1:
+                continue
+            if word_lower in stopwords:
+                continue
+            if word_lower.isdigit():
+                continue
+
+            words_for_cloud.append(word_lower)
+
+    else:
+        print(f"{LOG_PREFIX} 警告: 数据中缺少 tokens / cleaned_text 列，跳过词云图")
         return None
 
-    print(f"{LOG_PREFIX} 评论文本总长度: {len(all_text)} 字符")
+    if not words_for_cloud:
+        print(f"{LOG_PREFIX} 警告: 无有效词汇，跳过词云图")
+        return None
+
+    word_freq = Counter(words_for_cloud)
+
+    # 过滤频次过低的孤立词，避免词云里出现太多杂词
+    word_freq = {
+        word: freq
+        for word, freq in word_freq.items()
+        if freq >= 3
+    }
+
+    if not word_freq:
+        print(f"{LOG_PREFIX} 警告: 过滤后无有效词汇，跳过词云图")
+        return None
+
+    print(f"{LOG_PREFIX} 词云有效词数: {len(word_freq)}")
+    print(f"{LOG_PREFIX} 词云Top20: {Counter(word_freq).most_common(20)}")
+
+    font_path = get_font_path()
+    if font_path is None:
+        print(f"{LOG_PREFIX} 警告: 未找到中文字体，跳过词云图")
+        return None
 
     try:
-        words = jieba.cut(all_text, cut_all=False)
-        filtered_words = [
-            w for w in words
-            if len(w.strip()) > 1 and w.strip() not in stopwords
-        ]
-
-        if not filtered_words:
-            print(f"{LOG_PREFIX} 警告: 分词后无有效词汇，跳过词云图")
-            return None
-
-        text_for_wordcloud = " ".join(filtered_words)
-        print(f"{LOG_PREFIX} 分词后有效词汇数: {len(filtered_words)}")
-
-        font_path = get_font_path()
-        if font_path is None:
-            print(f"{LOG_PREFIX} 警告: 未找到中文字体，跳过词云图")
-            return None
-
         wc = WordCloud(
             font_path=font_path,
             width=1200,
             height=600,
             background_color="white",
-            max_words=200,
+            max_words=120,
             max_font_size=150,
             min_font_size=12,
             collocations=False,
@@ -828,7 +860,7 @@ def plot_wordcloud(df):
             margin=10,
         )
 
-        wc.generate(text_for_wordcloud)
+        wc.generate_from_frequencies(word_freq)
 
         plt.figure(figsize=(16, 8), dpi=150)
         plt.imshow(wc, interpolation="bilinear")
@@ -845,10 +877,7 @@ def plot_wordcloud(df):
         traceback.print_exc()
         return None
 
-
-# ============================================================
-# 仪表盘主渲染函数
-# ============================================================
+#仪表盘主渲染函数
 def render_dashboard(sentiment_df, topic_df=None):
     """渲染完整的交互式仪表盘。"""
     print(f"\n{LOG_PREFIX} {'=' * 50}")
@@ -905,10 +934,7 @@ def render_dashboard(sentiment_df, topic_df=None):
 
     return page, wc_path
 
-
-# ============================================================
-# 主入口函数
-# ============================================================
+#主入口函数
 def main():
     """程序主入口。"""
     print(f"\n{LOG_PREFIX} {'#' * 50}")
@@ -951,9 +977,9 @@ def main():
         with open(output_path, "r", encoding="utf-8") as f:
             html_content = f.read()
 
-        # 提取 pyecharts 生成的图表 div + script 块
+        #提取 pyecharts 生成的图表 div + script 块
         chart_blocks = []
-        # 匹配从 <div id="... class="chart-container" 到 </script> 的完整图表块
+        #匹配从 <div id="... class="chart-container" 到 </script> 的完整图表块
         import re
         pattern = re.compile(
             r'<div id="[^"]+" class="chart-container"[^>]*>.*?</div>\s*<script>.*?</script>',
@@ -962,13 +988,13 @@ def main():
         for m in pattern.finditer(html_content):
             chart_blocks.append(m.group())
 
-        # 构建统计卡片
+        #构建统计卡片
         stat_cards_html = build_stat_cards(sentiment_df)
 
-        # 构建结论块
+        #构建结论块
         conclusions_html = render_conclusions_block(conclusions) if conclusions else ""
 
-        # 处理词云路径 —— 使用正斜杠，避免 Windows 反斜杠问题
+        #处理词云路径 —— 使用正斜杠，避免 Windows 反斜杠问题
         wordcloud_html = ""
         if wc_path is not None and os.path.exists(wc_path):
             wc_rel = os.path.relpath(wc_path, OUTPUT_DIR).replace("\\", "/")
@@ -1011,7 +1037,7 @@ def main():
         </div>
     </div>"""
 
-        # 构建完整页面结构
+        #构建完整页面结构
         full_html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -1357,9 +1383,6 @@ def main():
         traceback.print_exc()
         sys.exit(1)
 
-
-# ============================================================
-# 程序入口
-# ============================================================
+#程序入口
 if __name__ == "__main__":
     main()

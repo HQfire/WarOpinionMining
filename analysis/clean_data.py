@@ -10,7 +10,8 @@ from analysis.utils import (
     add_jieba_userdict,
     advanced_clean_text,
     tokenize,
-    standardize_columns
+    standardize_columns,
+    detect_language
 )
 #加载jieba自定义领域词
 add_jieba_userdict()
@@ -47,15 +48,20 @@ def load_and_clean_data(data_dir: str = None) -> pd.DataFrame:
                 print(f"读取 {file.name} 失败：{e}")
                 continue
 
-        # 统一列名
+        #统一列名
         df = standardize_columns(df, platform)
-        # 必须存在content列
+        #必须存在content列
         if 'content' not in df.columns or df['content'].dropna().empty:
             print(f"{file.name} 无有效 content 列，跳过")
             continue
         #清洗
         df['cleaned_text'] = df['content'].apply(advanced_clean_text)
-        df['tokens'] = df['cleaned_text'].apply(lambda x: tokenize(x, stopwords))
+        df['language'] = df['cleaned_text'].apply(detect_language)
+        df['tokens'] = df.apply(
+            lambda row: tokenize(row['cleaned_text'], stopwords, row['language']),
+            axis=1
+        )
+
         dfs.append(df)
 
     if not dfs:
@@ -72,6 +78,8 @@ def load_and_clean_data(data_dir: str = None) -> pd.DataFrame:
     print(f"\n清洗后有效评论数：{len(merged)}")
     print("各平台分布：")
     print(merged['platform'].value_counts())
+    print("语言分布：")
+    print(merged['language'].value_counts())
 
     #保存
     output_path = PROCESSED_DIR / "cleaned_data.csv"
@@ -82,6 +90,3 @@ def load_and_clean_data(data_dir: str = None) -> pd.DataFrame:
 
 if __name__ == "__main__":
     df = load_and_clean_data()
-    if df is not None:
-        print("\n预览前5条：")
-        print(df[['cleaned_text', 'platform']].head())
